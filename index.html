@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Happy Birthday, Anne</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="page-shell">
+    <div class="particles" aria-hidden="true"></div>
+
+    <header class="hero" id="hero">
+      <div class="hero-copy">
+        <span class="eyebrow">For Anne, with love</span>
+        <h1>Happy Birthday, beautiful soul.</h1>
+        <p>
+          Today we celebrate your warmth, your laughter, and every magical moment we shared.
+          May this year feel like a soft sunrise, glowing with delight and endless love.
+        </p>
+        <div class="hero-actions">
+          <button class="button button-primary" id="openTimeline">View Special Moments</button>
+          <button class="button button-secondary" id="musicToggle">Play Music</button>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <div class="hero-card">
+          <p>Tip: Tap any photo on the carousel to expand the memory.</p>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="section intro">
+        <div>
+          <span class="section-label">A gentle celebration</span>
+          <h2>Moments that make your story glow</h2>
+          <p>
+            Every photo here holds a whisper of joy, a quiet laugh, a shared dream.
+            Explore your gallery and feel the warmth of all those beautiful memories.
+          </p>
+        </div>
+      </section>
+
+      <section class="section gallery-section" aria-labelledby="galleryTitle">
+        <div class="section-heading">
+          <span class="section-label">Photo Album</span>
+          <h2 id="galleryTitle">A rotating gallery of love</h2>
+        </div>
+        <div class="gallery-grid">
+          <div class="gallery-carousel" id="galleryCarousel" aria-live="polite"></div>
+          <div class="gallery-sidecard">
+            <h3>Sweet memories</h3>
+            <p>
+              Each image is a gentle reminder of how far you've come and how brightly you shine.
+            </p>
+            <div class="gallery-hint">
+              Tap a moment to reveal the story behind it.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section timeline-section" id="timelineSection">
+        <div class="section-heading">
+          <span class="section-label">Memories Timeline</span>
+          <h2>Special Moments</h2>
+        </div>
+        <div class="timeline" id="timeline"></div>
+      </section>
+
+      <section class="section final-section">
+        <div class="final-card">
+          <h2>To the one who makes every day feel brighter</h2>
+          <p>
+            I hope you feel deeply cherished today and always. Your heart is a safe place, your smile is my favorite view,
+            and your presence turns ordinary moments into something unforgettable.
+          </p>
+          <p>
+            Happy birthday, Anne. May this chapter be full of tenderness, dreams realized, and the sweetest memories yet to come.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <div class="modal" id="photoModal" aria-hidden="true" role="dialog" aria-labelledby="modalTitle" aria-describedby="modalDescription">
+      <div class="modal-backdrop" id="modalBackdrop"></div>
+      <div class="modal-content" role="document">
+        <button class="modal-close" id="closeModal" aria-label="Close photo modal">×</button>
+        <div class="modal-image-wrapper">
+          <img src="" alt="" id="modalImage" />
+        </div>
+        <div class="modal-copy">
+          <span class="modal-tag">Memory</span>
+          <h3 id="modalTitle"></h3>
+          <p id="modalDescription"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
