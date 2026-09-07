@@ -21,21 +21,6 @@ const galleryData = [
   },
 ];
 
-async function loadAnnePicturesManifest() {
-  try {
-    const res = await fetch('assets/anne-pictures/manifest.json', { cache: 'no-cache' });
-    if (!res.ok) return;
-    const manifest = await res.json();
-    // Insert discovered images at the front of the gallery
-    manifest.forEach((m) => {
-      galleryData.unshift({ src: m.path, title: m.filename, message: '' });
-    });
-  } catch (err) {
-    // fail silently if manifest isn't available
-    console.warn('Could not load anne pictures manifest', err);
-  }
-}
-
 const timelineData = [
   {
     title: "The first hello",
@@ -55,199 +40,361 @@ const timelineData = [
 ];
 
 let currentSlide = 0;
+let modalIndex = 0;
 let musicOn = false;
-let audioContext;
-let toneGain;
-let scheduledNotes = [];
+let audioContext = null;
+let toneGain = null;
 let melodyTimer = null;
+let scheduledNotes = [];
+let autoplayTimer = null;
+let lastFocusedElement = null;
+
+async function loadAnnePicturesManifest() {
+  try {
+    const res = await fetch("assets/anne-pictures/manifest.json", { cache: "no-cache" });
+    if (!res.ok) return;
+    const manifest = await res.json();
+    if (!Array.isArray(manifest)) return;
+
+    manifest
+      .filter((item) => item && item.path)
+      .reverse()
+      .forEach((item) => {
+        galleryData.unshift({
+          src: item.path,
+          title: item.title || item.filename || "A special memory",
+          message: item.message || "A beautiful moment worth remembering.",
+        });
+      });
+  } catch (error) {
+    console.warn("Could not load Anne pictures manifest", error);
+  }
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
 
 function createParticles() {
-  const container = document.querySelector('.particles');
-  const count = 35;
+  const container = document.querySelector(".particles");
+  if (!container) return;
+
+  const count = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 12 : 35;
+  const fragment = document.createDocumentFragment();
 
   for (let i = 0; i < count; i += 1) {
-    const dot = document.createElement('div');
-    dot.className = 'particle';
-    const size = Math.random() * 6 + 4;
+    const dot = document.createElement("div");
+    dot.className = "particle";
+    const size = Math.random() * 6 + 3;
     dot.style.width = `${size}px`;
     dot.style.height = `${size}px`;
     dot.style.left = `${Math.random() * 100}%`;
     dot.style.top = `${Math.random() * 100}%`;
     dot.style.animationDuration = `${Math.random() * 18 + 12}s`;
     dot.style.animationDelay = `${Math.random() * 4}s`;
-    dot.style.opacity = `${Math.random() * 0.3 + 0.2}`;
-    container.appendChild(dot);
+    dot.style.opacity = `${Math.random() * 0.3 + 0.15}`;
+    fragment.appendChild(dot);
   }
+
+  container.appendChild(fragment);
 }
 
 function renderGallery() {
-  const carousel = document.getElementById('galleryCarousel');
-  carousel.innerHTML = '';
+  const carousel = document.getElementById("galleryCarousel");
+  if (!carousel) return;
+
+  carousel.innerHTML = "";
+
   galleryData.forEach((item, index) => {
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.className = 'gallery-card';
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "gallery-card";
+    card.dataset.index = String(index);
+    card.setAttribute("aria-label", `Open memory: ${item.title}`);
     card.innerHTML = `
-      <img src="${item.src}" alt="${item.title}" loading="lazy" />
+      <img src="${escapeHtml(item.src)}" alt="${escapeHtml(item.title)}" loading="lazy" decoding="async" />
       <div class="overlay">
-        <span class="caption">${item.title}</span>
+        <div>
+          <span class="caption">${escapeHtml(item.title)}</span>
+          <span class="caption-hint">Tap to open · ${index + 1}/${galleryData.length}</span>
+        </div>
       </div>
     `;
-    card.addEventListener('click', () => openModal(index));
+    card.addEventListener("click", () => openModal(index));
     carousel.appendChild(card);
   });
+
+  updateGalleryProgress();
 }
 
 function renderTimeline() {
-  const timeline = document.getElementById('timeline');
-  timelineData.forEach((item, index) => {
-    const element = document.createElement('article');
-    element.className = 'timeline-item';
-    element.innerHTML = `
-      <div>
-        <time>${item.date}</time>
-        <h3>${item.title}</h3>
-        <p>${item.text}</p>
-      </div>
-      <div class="circle">${String(index + 1).padStart(2, '0')}</div>
-    `;
-    timeline.appendChild(element);
-  });
+  const timeline = document.getElementById("timeline");
+  if (!timeline) return;
+
+  timeline.innerHTML = timelineData
+    .map(
+      (item, index) => `
+        <article class="timeline-item">
+          <div>
+            <time>${escapeHtml(item.date)}</time>
+            <h3>${escapeHtml(item.title)}</h3>
+            <p>${escapeHtml(item.text)}</p>
+          </div>
+          <div class="circle" aria-hidden="true">${String(index + 1).padStart(2, "0")}</div>
+        </article>
+      `
+    )
+    .join("");
+}
+
+function updateGalleryStatus() {
+  const status = document.getElementById("galleryStatus");
+  if (!status || !galleryData.length) return;
+  status.textContent = `${galleryData.length} memories to explore. Currently viewing ${currentSlide + 1} of ${galleryData.length}.`;
+}
+
+function updateGalleryProgress() {
+  const bar = document.getElementById("galleryProgressBar");
+  if (bar) {
+    const percent = galleryData.length ? ((currentSlide + 1) / galleryData.length) * 100 : 0;
+    bar.style.width = `${percent}%`;
+  }
+  updateGalleryStatus();
+}
+
+function goToSlide(index, smooth = true) {
+  if (!galleryData.length) return;
+  currentSlide = (index + galleryData.length) % galleryData.length;
+  const carousel = document.getElementById("galleryCarousel");
+  const slide = carousel?.children[currentSlide];
+
+  if (slide) {
+    slide.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "nearest", inline: "center" });
+  }
+  updateGalleryProgress();
 }
 
 function openModal(index) {
-  const item = galleryData[index];
-  const modal = document.getElementById('photoModal');
-  const image = document.getElementById('modalImage');
-  const title = document.getElementById('modalTitle');
-  const description = document.getElementById('modalDescription');
+  if (!galleryData.length) return;
+  modalIndex = (index + galleryData.length) % galleryData.length;
+  lastFocusedElement = document.activeElement;
+
+  const item = galleryData[modalIndex];
+  const modal = document.getElementById("photoModal");
+  const image = document.getElementById("modalImage");
+  const title = document.getElementById("modalTitle");
+  const description = document.getElementById("modalDescription");
+  const counter = document.getElementById("modalCounter");
 
   image.src = item.src;
   image.alt = item.title;
   title.textContent = item.title;
-  description.textContent = item.message;
-  modal.classList.add('open');
-  modal.setAttribute('aria-hidden', 'false');
+  description.textContent = item.message || "A beautiful moment worth remembering.";
+  counter.textContent = `${modalIndex + 1} / ${galleryData.length}`;
+
+  modal.classList.add("open");
+  modal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+  document.getElementById("closeModal")?.focus();
+  stopAutoplay();
 }
 
 function closeModal() {
-  const modal = document.getElementById('photoModal');
-  modal.classList.remove('open');
-  modal.setAttribute('aria-hidden', 'true');
+  const modal = document.getElementById("photoModal");
+  if (!modal?.classList.contains("open")) return;
+
+  modal.classList.remove("open");
+  modal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("modal-open");
+  document.getElementById("modalImage").src = "";
+  startAutoplay();
+
+  if (lastFocusedElement instanceof HTMLElement) {
+    lastFocusedElement.focus();
+  }
+}
+
+function moveModal(direction) {
+  modalIndex = (modalIndex + direction + galleryData.length) % galleryData.length;
+  const item = galleryData[modalIndex];
+  document.getElementById("modalImage").src = item.src;
+  document.getElementById("modalImage").alt = item.title;
+  document.getElementById("modalTitle").textContent = item.title;
+  document.getElementById("modalDescription").textContent = item.message || "A beautiful moment worth remembering.";
+  document.getElementById("modalCounter").textContent = `${modalIndex + 1} / ${galleryData.length}`;
+  goToSlide(modalIndex, false);
+}
+
+function initGalleryControls() {
+  document.getElementById("galleryPrev")?.addEventListener("click", () => {
+    stopAutoplay();
+    goToSlide(currentSlide - 1);
+    startAutoplay();
+  });
+
+  document.getElementById("galleryNext")?.addEventListener("click", () => {
+    stopAutoplay();
+    goToSlide(currentSlide + 1);
+    startAutoplay();
+  });
+
+  const carousel = document.getElementById("galleryCarousel");
+  carousel?.addEventListener("scroll", () => {
+    window.requestAnimationFrame(() => {
+      const cards = [...carousel.children];
+      if (!cards.length) return;
+      const center = carousel.scrollLeft + carousel.clientWidth / 2;
+      let nearest = 0;
+      let distance = Infinity;
+      cards.forEach((card, index) => {
+        const cardCenter = card.offsetLeft + card.offsetWidth / 2;
+        const currentDistance = Math.abs(cardCenter - center);
+        if (currentDistance < distance) {
+          distance = currentDistance;
+          nearest = index;
+        }
+      });
+      currentSlide = nearest;
+      updateGalleryProgress();
+    });
+  });
+}
+
+function initModalEvents() {
+  const modal = document.getElementById("photoModal");
+  document.getElementById("closeModal")?.addEventListener("click", closeModal);
+  document.getElementById("modalBackdrop")?.addEventListener("click", closeModal);
+  document.getElementById("modalPrev")?.addEventListener("click", () => moveModal(-1));
+  document.getElementById("modalNext")?.addEventListener("click", () => moveModal(1));
+
+  document.addEventListener("keydown", (event) => {
+    if (!modal?.classList.contains("open")) return;
+    if (event.key === "Escape") closeModal();
+    if (event.key === "ArrowLeft") moveModal(-1);
+    if (event.key === "ArrowRight") moveModal(1);
+  });
 }
 
 function initAudio() {
-  const toggle = document.getElementById('musicToggle');
-  toggle.addEventListener('click', () => {
+  const toggle = document.getElementById("musicToggle");
+  if (!toggle) return;
+
+  toggle.addEventListener("click", async () => {
     if (!audioContext) {
-      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) {
+        toggle.textContent = "Music unavailable";
+        toggle.disabled = true;
+        return;
+      }
+      audioContext = new AudioContext();
       toneGain = audioContext.createGain();
-      toneGain.gain.value = 0.04;
+      toneGain.gain.value = 0.035;
       toneGain.connect(audioContext.destination);
     }
 
+    if (audioContext.state === "suspended") await audioContext.resume();
+
     if (!musicOn) {
       musicOn = true;
-      toggle.textContent = 'Pause Music';
-      if (audioContext.state === 'suspended') {
-        audioContext.resume();
-      }
+      toggle.textContent = "♫ Pause Music";
+      toggle.setAttribute("aria-pressed", "true");
       startMelody();
     } else {
       musicOn = false;
-      toggle.textContent = 'Play Music';
+      toggle.textContent = "♫ Play Music";
+      toggle.setAttribute("aria-pressed", "false");
       stopMelody();
     }
   });
 }
 
 function playSequence() {
-  const notes = [440, 523, 659, 587, 523];
-  let time = audioContext.currentTime + 0.18;
+  if (!audioContext || !toneGain || !musicOn) return;
+  const notes = [440, 523.25, 659.25, 587.33, 523.25, 440];
+  const now = audioContext.currentTime + 0.08;
 
-  scheduledNotes = notes.map((freq, index) => {
+  scheduledNotes = notes.map((frequency, index) => {
     const osc = audioContext.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.value = freq;
-    osc.connect(toneGain);
-    osc.start(time + index * 0.6);
-    osc.stop(time + index * 0.6 + 1.3);
+    const gain = audioContext.createGain();
+    osc.type = "sine";
+    osc.frequency.value = frequency;
+    gain.gain.setValueAtTime(0, now + index * 0.55);
+    gain.gain.linearRampToValueAtTime(0.8, now + index * 0.55 + 0.04);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + index * 0.55 + 0.52);
+    osc.connect(gain);
+    gain.connect(toneGain);
+    osc.start(now + index * 0.55);
+    osc.stop(now + index * 0.55 + 0.55);
     return osc;
   });
 }
 
 function startMelody() {
-  if (melodyTimer) {
-    return;
-  }
+  if (melodyTimer || !musicOn) return;
   playSequence();
-  melodyTimer = setInterval(playSequence, 4300);
+  melodyTimer = window.setInterval(playSequence, 3400);
 }
 
 function stopMelody() {
   if (melodyTimer) {
-    clearInterval(melodyTimer);
+    window.clearInterval(melodyTimer);
     melodyTimer = null;
   }
-
   scheduledNotes.forEach((osc) => {
-    if (osc && osc.stop) {
-      try {
-        osc.stop();
-      } catch (error) {
-        // ignore if already stopped
-      }
-    }
+    try { osc.stop(); } catch (_) { /* already stopped */ }
   });
   scheduledNotes = [];
 }
 
-function setupModalEvents() {
-  const modal = document.getElementById('photoModal');
-  const backdrop = document.getElementById('modalBackdrop');
-  const closeButton = document.getElementById('closeModal');
+function startAutoplay() {
+  if (autoplayTimer || galleryData.length < 2 || document.hidden) return;
+  autoplayTimer = window.setInterval(() => goToSlide(currentSlide + 1), 6000);
+}
 
-  closeButton.addEventListener('click', closeModal);
-  backdrop.addEventListener('click', closeModal);
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && modal.classList.contains('open')) {
-      closeModal();
-    }
+function stopAutoplay() {
+  if (autoplayTimer) {
+    window.clearInterval(autoplayTimer);
+    autoplayTimer = null;
+  }
+}
+
+function initAutoplay() {
+  startAutoplay();
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) stopAutoplay();
+    else if (!document.getElementById("photoModal")?.classList.contains("open")) startAutoplay();
   });
 }
 
 function scrollReveal() {
-  const revealElements = document.querySelectorAll('.section, .gallery-card, .timeline-item, .final-card');
+  const elements = document.querySelectorAll(".section, .gallery-card, .timeline-item, .final-card");
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
   const observer = new IntersectionObserver(
     (entries) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
-          entry.target.style.opacity = '1';
-          entry.target.style.transform = 'none';
+          entry.target.classList.add("is-visible");
           observer.unobserve(entry.target);
         }
       });
     },
-    { threshold: 0.2 }
+    { threshold: 0.12 }
   );
 
-  revealElements.forEach((element) => {
-    element.style.opacity = '0';
-    element.style.transform = 'translateY(24px)';
-    element.style.transition = 'opacity 0.8s ease, transform 0.8s ease';
-    observer.observe(element);
-  });
+  elements.forEach((element) => observer.observe(element));
 }
 
-function initCarouselAutoplay() {
-  const carousel = document.getElementById('galleryCarousel');
-  setInterval(() => {
-    currentSlide = (currentSlide + 1) % galleryData.length;
-    const slide = carousel.children[currentSlide];
-    if (slide) {
-      slide.scrollIntoView({ behavior: 'smooth', inline: 'center' });
-    }
-  }, 5200);
+function initPageNavigation() {
+  document.getElementById("openTimeline")?.addEventListener("click", () => {
+    document.getElementById("timelineSection")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
 }
 
 async function init() {
@@ -255,14 +402,13 @@ async function init() {
   await loadAnnePicturesManifest();
   renderGallery();
   renderTimeline();
-  setupModalEvents();
+  initGalleryControls();
+  initModalEvents();
   initAudio();
   scrollReveal();
-  initCarouselAutoplay();
-
-  document.getElementById('openTimeline').addEventListener('click', () => {
-    document.getElementById('timelineSection').scrollIntoView({ behavior: 'smooth' });
-  });
+  initAutoplay();
+  initPageNavigation();
+  updateGalleryStatus();
 }
 
-window.addEventListener('DOMContentLoaded', init);
+window.addEventListener("DOMContentLoaded", init);
